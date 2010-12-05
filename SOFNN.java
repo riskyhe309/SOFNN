@@ -9,6 +9,7 @@ package craig;
 //in here comes from page 4 of the paper.
 
 // Modified by craig 11/28/10
+// Another trivial commit
 
 import java.util.ArrayList; 
 
