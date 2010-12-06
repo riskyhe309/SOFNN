@@ -1,4 +1,3 @@
-// Created by craig
 package craig;
 
 import java.io.BufferedReader;
@@ -7,16 +6,19 @@ import java.io.FileInputStream;
 import java.io.InputStreamReader;
 import java.io.IOException;
 import java.util.ArrayList;
+import org.apache.log4j.Logger;
 import craig.SOFNN;
 
 public final class qq 
 {
     public static final int INPUT_VECTOR_LENGTH = 3;
-    public static final double ERROR_TOLERANCE = 100;
-	public static double INITIAL_WIDTH = 100;
+    public static final double ERROR_TOLERANCE = 50;
+	public static double INITIAL_WIDTH = 200;
     public static final double MIN_FIRING_STRENGTH = 0.1354;
     public static final double WIDTH_ENLARGEMENT_CONSTANT = 1.12;
     public static final double DISTANCE_THRESHOLD = 10;
+    static Logger logger = Logger.getLogger("qq");
+    static String DATA_FILE = "/Users/craig429/Documents/DJIAin.csv";
 
     public static void main(String[] args) throws IOException
 	{
@@ -25,9 +27,10 @@ public final class qq
 		double[] inputVector = new double[INPUT_VECTOR_LENGTH];
 		double expectedValue;
 		ArrayList<String> closingPrices = new ArrayList<String>();
-		
 
-		FileInputStream djia = new FileInputStream( "/Users/craig429/Documents/DJIAin.csv" );
+		SOFNN net = new SOFNN();
+
+		FileInputStream djia = new FileInputStream( DATA_FILE );
 		DataInputStream djiaIn = new DataInputStream( djia );
 		BufferedReader djiaFile = new BufferedReader( new InputStreamReader( djiaIn ) );
 		strLine = djiaFile.readLine();	// First line is header text, so discard        
@@ -49,12 +52,19 @@ public final class qq
 	        	break;
 		}
 
-		for( int index=0; index < 3; index++)
+		for( int index=0; index < 10; index++)
 		{
 			for( int i=0; i < INPUT_VECTOR_LENGTH; i++)
 				inputVector[i] = Double.valueOf( closingPrices.get( i+index ) );
 			expectedValue = Double.valueOf( closingPrices.get( INPUT_VECTOR_LENGTH + index ) );
-			SOFNN net = new SOFNN();
+        
+	        logger.debug(" " );
+	        logger.debug("Iteration " + index );
+//	        logger.debug("Closing price 1 = " + inputVector[0] );
+//	        logger.debug("Closing price 2 = " + inputVector[1] );
+//	        logger.debug("Closing price 3 = " + inputVector[2] );
+//	        logger.debug("Expected price  = " + expectedValue );
+	         
 			net.compute( inputVector, expectedValue );
 		}
 	}
