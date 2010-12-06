@@ -13,7 +13,7 @@ public final class qq
 {
     public static final int INPUT_VECTOR_LENGTH = 3;
     public static final double ERROR_TOLERANCE = 50;
-	public static double INITIAL_WIDTH = 200;
+	public static double INITIAL_WIDTH = 100;
     public static final double MIN_FIRING_STRENGTH = 0.1354;
     public static final double WIDTH_ENLARGEMENT_CONSTANT = 1.12;
     public static final double DISTANCE_THRESHOLD = 10;

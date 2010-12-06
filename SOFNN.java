@@ -121,8 +121,9 @@ public class SOFNN
 		double[] EBFOutputs = new double[EBFNeurons.size()];
 		double[] normalizedOutputs = new double[normalizationNeurons.size()];
 		double[] weightedOutputs = new double[weightedNeurons.size()];
-		double[][][] dist = new double[EBFNeurons.size()][vector.length][vector.length];
+		double[][] dist = new double[vector.length][EBFNeurons.size()];
 		boolean firingStrengthSatisfied = false;
+		double[] firedNeurons = new double[EBFNeurons.size()];
 		        
 		for ( int i=0; i < EBFNeurons.size(); i++ )
 		{
@@ -141,13 +142,27 @@ public class SOFNN
 
 		for( int i=0; i < EBFNeurons.size(); i++ )
 		{
-			if( EBFOutputs[i] >= qq.MIN_FIRING_STRENGTH ) 
-				firingStrengthSatisfied = true;			
+			if( EBFOutputs[i] >= qq.MIN_FIRING_STRENGTH )
+			{
+				firingStrengthSatisfied = true;
+				firedNeurons[i] = EBFOutputs[i];
+			}
+			else
+				firedNeurons[i] = -1;
 		}
 
 		error = Math.abs( computedOutput - expectedOutput );
 		
         logger.debug( "Neuron fired = " + firingStrengthSatisfied );
+        if( firingStrengthSatisfied == true )
+        {
+    		for( int i=0; i < EBFNeurons.size(); i++ )
+    		{
+    			if( firedNeurons[i] >= 0 )
+    		        logger.debug( "   Neuron[" + i + "] value = " + firedNeurons[i] );
+    		}    		
+        }
+        
         logger.debug( "output result = " + computedOutput + " Error = " + error );
         reportNeurons( EBFOutputs, error );
         
@@ -194,43 +209,29 @@ public class SOFNN
 	        logger.debug( "-----------" );
 	        logger.debug( "Criterion C" );
 	        
-			// Compute the distance from all inputs to all mf centers
+	        // Find the distance between the vector values and the center of 
+	        // all of the corresponding membership functions in all neurons
         	for( int i=0; i < EBFNeurons.size(); i++  )
         	{
-        		for( int j=0; j < EBFNeurons.get( i ).mf.length; j++ )
-        		{
-        			for( int k=0; k < vector.length; k++)
-        			{
-	        			dist[i][j][k] = Math.abs( vector[k] - EBFNeurons.get( i ).mf[j].center );
-//	        	        logger.debug( "Neuron[" + i + "], MF[" + j +"], Center = " + EBFNeurons.get( i ).mf.get( j ).center );
-//	        	        logger.debug( "Neuron[" + i + "], MF[" + j +"], Vector[" + k + "], Distance = " + dist[i][j][k] );
-	        		}
-	        	}
-	        }
-        	
+        		for( int j=0; j < vector.length; j++)
+	        			dist[j][i] = Math.abs( vector[j] - EBFNeurons.get( i ).mf[j].center );
+			}
+	        
         	double[] newCenterVector = new double[vector.length];
            	double[] newWidthVector = new double[vector.length];
-        	double[][] distance = new double[vector.length][EBFNeurons.size()];
         	double[] minVal = new double[vector.length];
         	int[] minIndex = new int[vector.length];
-        	
-        	// Form the distances to be minimized
-        	for( int i=0; i < vector.length; i++ )
-        	{
-        		for( int j=0; j < EBFNeurons.size(); j++ )
-        			distance[i][j] = Math.abs( vector[i] - EBFNeurons.get( j ).mf[i].center );        		
-        	}
         	
         	// Minimize
         	for( int i=0; i < vector.length; i++ )
         	{
         		minIndex[i] = 0;
-        		minVal[i] = distance[i][0];
+        		minVal[i] = dist[i][0];
            		for( int j=1; j < EBFNeurons.size(); j++ )
            		{
-           			if( Math.min( minVal[i], distance[i][j] ) != minVal[i] )
+           			if( Math.min( minVal[i], dist[i][j] ) != minVal[i] )
            			{
-           				minVal[i] = distance[i][j];
+           				minVal[i] = dist[i][j];
            				minIndex[i] = j;
            			}           			
            		}        		
@@ -240,10 +241,10 @@ public class SOFNN
         	// Else if distance > distance threshold make the mf center the associated input value 
         	for( int i=0; i < vector.length; i++ )
         	{
-        		if( EBFNeurons.get( minIndex[i] ).mf[i].center < qq.DISTANCE_THRESHOLD )
+        		if( ( EBFNeurons.get( minIndex[i] ).mf[i].center - minVal[i] ) < qq.DISTANCE_THRESHOLD )
         		{
-        			newCenterVector[i] = EBFNeurons.get( minIndex[i] ).mf[ minIndex[i] ].center;
-        			newWidthVector[i] = EBFNeurons.get( minIndex[i] ).mf[ minIndex[i] ].width;
+        			newCenterVector[i] = EBFNeurons.get( minIndex[i] ).mf[i].center;
+        			newWidthVector[i] = EBFNeurons.get( minIndex[i] ).mf[i].width;
         		}
         		else
         		{
@@ -298,7 +299,6 @@ public class SOFNN
 	void reportNeurons( double[] EBFOutputs, double error )
 	{
 		logger.debug( "Number of neurons: " + EBFNeurons.size() );
-		logger.debug( "Error: " + error );
        	for( int i=0; i < EBFNeurons.size(); i++  )
     	{
 			logger.debug( "EBF[" + i + "] output = " + EBFOutputs[i]  );
