@@ -9,17 +9,30 @@ package craig;
 //in here comes from page 4 of the paper
 import java.util.ArrayList; 
 import org.apache.log4j.Logger;
+import Jama.Matrix;
+
 
 
 public class SOFNN 
 {
     static Logger logger = Logger.getLogger( "SOFNN" );
 	static double[] initialCenters = new double[qq.INPUT_VECTOR_LENGTH];
+	static int trainingIteration;
+	static boolean trainingMode;
 	
-	double expectedOutput;
 	ArrayList<EBFNeuron> EBFNeurons = new ArrayList<EBFNeuron>();
 	ArrayList<normalizationNeuron> normalizationNeurons = new ArrayList<normalizationNeuron>();
 	ArrayList<weightedNeuron> weightedNeurons = new ArrayList<weightedNeuron>();
+	ArrayList<double[]> trainingPatterns = new ArrayList<double[]>();
+	ArrayList<double[]> parameters = new ArrayList<double[]>();
+	ArrayList<Double> desiredOutputs = new ArrayList<Double>();
+	ArrayList<Double> actualOutputs = new ArrayList<Double>();
+	ArrayList<Double> errors = new ArrayList<Double>();
+	double[] EBFOutputs = new double[EBFNeurons.size()];
+	double[] normalizedOutputs = new double[normalizationNeurons.size()];
+	double[] consequentParams = new double[weightedNeurons.size()+1];
+	double[] weightedOutputs = new double[weightedNeurons.size()];
+
 
 	class  membershipFunction
 	{
@@ -45,8 +58,6 @@ public class SOFNN
 			for( int i=0; i < qq.INPUT_VECTOR_LENGTH; i++ )
 			{
 				membershipFunction newMF = new membershipFunction();
-				newMF.center = initialCenters[i];
-				newMF.width = qq.INITIAL_WIDTH;
 				mf[i] = newMF;
 			}
 		}
@@ -58,7 +69,7 @@ public class SOFNN
 			double output;
 
 
-			// The output of an EBF neuron is the negated sum of its membership functions
+			// The output of an EBF neuron is the negated product of its membership functions
 			// to the eth power.
 			// We subtract the center from the input and square that number
 			// then divide the result by two times the width squared, just like in the paper.
@@ -82,63 +93,100 @@ public class SOFNN
 				
 		}
 		
-		double output( double input, double sum )
+		double output( int nodeId )
 		{
 			double normalized;
+			double thisNodeSum= EBFOutputs[nodeId];
+			double allNodeSum=0;
 			// Here we return the output of a specific neuron divided by the 
 			// sum of all the neurons.
-			normalized = input/sum;
-//			logger.debug( "Normalized output = " + normalized  );
+			for( int i=0; i < EBFNeurons.size(); i++ )
+			{
+				allNodeSum += EBFOutputs[i];				
+			}
+			normalized = thisNodeSum/allNodeSum;
+			logger.debug( "Normalized output Neuron[" + nodeId + "] = " + normalized  );
 			return normalized;
 		}		
 	}
 
 	// The weighted layer multiplies all the outputs by a bias value.
 	class weightedNeuron
-	{
-		public double weight=11181.23;
-		
+	{		
 		weightedNeuron()
 		{
 			
 		}
 		
-		double output( double input )
+		double output( double[] input, double[] parameters )
 		{
-			double weighted = weight*input;
-//			logger.debug( "Weighted output = " + weighted );
-			return weighted;
+			double sum = 0;
+			for( int i=0; i < qq.INPUT_VECTOR_LENGTH; i++ )
+				sum += ( input[i] * parameters[i+1] );
+			sum += parameters[0];
+			
+			logger.debug( "Weighted output = " + sum );
+			return sum;
 		}
 	}
 	
-	double finalOutput( double[] vector )
+	double finalOutput( double[] vector, double expectedOutput )
 	{
-		double computedOutput = 0;
+		double computedOutput;
 		double error;
 		double minMFValue;
 		int[] minMFIndex = new int[EBFNeurons.size()];
-		double EBFSum = 0;
-		double[] EBFOutputs = new double[EBFNeurons.size()];
-		double[] normalizedOutputs = new double[normalizationNeurons.size()];
-		double[] weightedOutputs = new double[weightedNeurons.size()];
 		double[][] dist = new double[vector.length][EBFNeurons.size()];
 		boolean firingStrengthSatisfied = false;
 		double[] firedNeurons = new double[EBFNeurons.size()];
 		        
-		for ( int i=0; i < EBFNeurons.size(); i++ )
+		EBFOutputs = new double[EBFNeurons.size()];
+		normalizedOutputs = new double[normalizationNeurons.size()];
+		weightedOutputs = new double[weightedNeurons.size()];
+		
+		computedOutput = runIt( vector );
+		error = Math.abs( computedOutput - expectedOutput );
+		
+		// Update the arrays
+		actualOutputs.add( computedOutput );
+		errors.add( error );
+		
+		// Form the RLS vectors/matrices
+		double[] dVals = new double[desiredOutputs.size()];
+		for( int i=0; i < desiredOutputs.size(); i++)
+			dVals[i] = desiredOutputs.get( i );
+		Matrix D = new Matrix( dVals, desiredOutputs.size() );
+		logger.debug( "D = " );
+		D.print(D.getColumnDimension(), 2 );
+		
+		double[][] pVals = new double[trainingIteration][qq.INPUT_VECTOR_LENGTH+1];
+		for( int i=0; i < trainingIteration; i++)
 		{
-			EBFOutputs[i] = EBFNeurons.get( i ).output( vector );
-			EBFSum += EBFOutputs[i];
+			pVals[i][0] = 1;
+			for( int j=1; j < qq.INPUT_VECTOR_LENGTH+1; j++ )
+			{
+				pVals[i][j] = trainingPatterns.get( i )[j-1];
+			}
 		}
+		Matrix P = new Matrix( pVals );
+		logger.debug( "P = " );
+		P.print(P.getColumnDimension(), 2 );
 		
-		for ( int i=0; i < normalizationNeurons.size(); i++ )
-			normalizedOutputs[i] = normalizationNeurons.get( i ).output( EBFOutputs[i], EBFSum );
+		Matrix Q =  ( ( P.transpose() ).times( P ) ).inverse();
+		logger.debug( "Q = " );
+		Q.print( Q.getColumnDimension(), 2 );
 		
-		for ( int i=0; i < weightedNeurons.size(); i++)
-			weightedOutputs[i] = weightedNeurons.get( i ).output( normalizedOutputs[i] );
+		double[] eVals = new double[errors.size()];
+		for( int i=0; i < errors.size(); i++)
+			eVals[i] = errors.get( i );
+		Matrix E = new Matrix( eVals, errors.size() );
+		logger.debug( "E = " );
+		E.print(E.getColumnDimension(), 2 );
+
+		Matrix theta = Q.times( P ).transpose().times( D );
+		logger.debug( "theta = " );
+		theta.print( theta.getColumnDimension(), 2 );
 		
-		for( int i=0; i < weightedOutputs.length; i++ )
-			computedOutput += weightedOutputs[i];
 
 		for( int i=0; i < EBFNeurons.size(); i++ )
 		{
@@ -150,8 +198,6 @@ public class SOFNN
 			else
 				firedNeurons[i] = -1;
 		}
-
-		error = Math.abs( computedOutput - expectedOutput );
 		
         logger.debug( "Neuron fired = " + firingStrengthSatisfied );
         if( firingStrengthSatisfied == true )
@@ -290,12 +336,99 @@ public class SOFNN
 	        }
         	
         	for( int i=0; i < EBFNeurons.size(); i++  )
-    	        logger.debug( "Neuron[" + i + "] MF Min Value = " + EBFNeurons.get( i ).mfValues[ minMFIndex[i] ] );	
+    	        logger.debug( "Neuron[" + i + "] MF Min Value = " + EBFNeurons.get( i ).mfValues[ minMFIndex[i] ] );
+
+/*        	// Try widen out the widths. Just go around 10 times for now, until we figure out what we're doing.
+        	// Ideally, we go until firing strength of at least one neuron is reached.
+        	for( int i=0; i < 10; i++ )
+        	{
+        		// Widen the centers out
+        		for( int j=0; j < vector.length; j++ )
+        			EBFNeurons.get( i ).mf[ minMFIndex[i] ].center *= qq.WIDTH_ENLARGEMENT_CONSTANT;
+        		
+        		// Rerun the net, recalc error and firing stats.
+        		computedOutput = runIt( vector);
+        		error = Math.abs( computedOutput - expectedOutput );
+        		firingStrengthSatisfied = false;
+        		for( int j=0; j < EBFNeurons.size(); j++ )
+        		{
+        			if( EBFOutputs[i] >= qq.MIN_FIRING_STRENGTH )
+        			{
+        				firingStrengthSatisfied = true;
+        				firedNeurons[i] = EBFOutputs[i];
+        			}
+        			else
+        				firedNeurons[i] = -1;
+        		}
+        		
+        		// Are we there yet?
+        		if( ( error > qq.ERROR_TOLERANCE ) && ( firingStrengthSatisfied == false ) )
+        		{
+        			// Nope. Recalc and widen again.
+                	for( int ii=0; ii < EBFNeurons.size(); ii++  )
+                	{
+                		for( int jj=0; jj < EBFNeurons.get( ii ).mf.length; jj++ )
+                		{
+                    		minMFValue = EBFNeurons.get(ii).mfValues[0];
+                			for( int kk=1; kk < vector.length; kk++)
+                			{        				
+        	        			if( EBFNeurons.get( ii ).mfValues[kk] < minMFValue )
+        	        			{
+        	        				minMFValue = EBFNeurons.get( ii ).mfValues[kk];
+        	        				minMFIndex[ii] = kk;
+        	        			}
+        	        		}
+        	        	}
+        	        }
+               		for( int j=0; j < vector.length; j++ )
+            			EBFNeurons.get( i ).mf[ minMFIndex[i] ].center *= qq.WIDTH_ENLARGEMENT_CONSTANT;
+        		}
+        		else
+        			// Yep. Outta here.
+        			break;
+        	}
+    		for( int i=0; i < EBFNeurons.size(); i++ )
+    		{
+    			if( EBFOutputs[i] >= qq.MIN_FIRING_STRENGTH )
+    			{
+    				firingStrengthSatisfied = true;
+    				firedNeurons[i] = EBFOutputs[i];
+    			}
+    			else
+    				firedNeurons[i] = -1;
+    		}
+*/
 		}		
 
 		return computedOutput;
 	}
+
+	// Find the minimum distance between the observation element and the corresponding 
+	// MF center.
+	public double[] calculateDistanceVector( double[] observation )
+	{
+		double[] distanceVector = new double[qq.INPUT_VECTOR_LENGTH];
+		double distance;
+		
+		for( int i=0; i < qq.INPUT_VECTOR_LENGTH; i++ )
+		{
+			distanceVector[i] = Math.abs( observation[i] - EBFNeurons.get( 0 ).mf[i].center );
+			for( int j=1; j < EBFNeurons.size(); j++ )
+			{
+				distance =  Math.abs( observation[i] - EBFNeurons.get( j ).mf[i].center );
+				if( distance < distanceVector[i] )
+					distanceVector[i] = distance;
+			}			
+		}
+		return distanceVector;
+		
+	}
 	
+	public void updateParameters( double[] observation, double desiredValue, double actualValue)
+	{
+		double error = Math.abs( desiredValue - actualValue );
+		
+	}
 	void reportNeurons( double[] EBFOutputs, double error )
 	{
 		logger.debug( "Number of neurons: " + EBFNeurons.size() );
@@ -307,20 +440,58 @@ public class SOFNN
     	}		
 	}
 	
-	public SOFNN()
+	public double runIt( double[] vector )
 	{
-		initialCenters[0] = 11036.37;
-		initialCenters[1] = 11178.58;
-		initialCenters[2] = 11203.55;
+		double computedOutput=0;
+		double[] parameters = new double[qq.INPUT_VECTOR_LENGTH+1];
+
+		for( int i=0; i < qq.INPUT_VECTOR_LENGTH+1; i++)
+			parameters[i] = .33;
+		
+		for ( int i=0; i < EBFNeurons.size(); i++ )
+			EBFOutputs[i] = EBFNeurons.get( i ).output( vector );
+		
+		for ( int i=0; i < normalizationNeurons.size(); i++ )
+			normalizedOutputs[i] = normalizationNeurons.get( i ).output( i );
+		
+		for ( int i=0; i < weightedNeurons.size(); i++)
+			weightedOutputs[i] = weightedNeurons.get( i ).output( vector, parameters );
+		
+		for( int i=0; i < weightedOutputs.length; i++ )
+			computedOutput += weightedOutputs[i];
+		
+		return computedOutput;
+	}
+	
+	public SOFNN( double[] initialVector )
+	{
+		double[] params = new double[qq.INPUT_VECTOR_LENGTH+1];
+		// The first input vector determines the centers of the first neuron MFs.
+		trainingIteration = 0;
 		EBFNeurons.add( new EBFNeuron() );
+		for( int i=0; i < qq.INPUT_VECTOR_LENGTH; i++ )
+		{
+			EBFNeurons.get( 0 ).mf[i].center = initialVector[i];
+			EBFNeurons.get( 0 ).mf[i].width = qq.INITIAL_WIDTH;
+		}
+		
+		for( int i=0; i < qq.INPUT_VECTOR_LENGTH+1; i++ )
+			params[i] = 1;
+		parameters.add( params );
+
 		normalizationNeurons.add( new normalizationNeuron() );
 		weightedNeurons.add( new weightedNeuron() );	
 	}
 
-	public double compute( double[] vector, double output ) 
+	public double compute( double[] vector, Double desiredOutput ) 
 	{
-		expectedOutput = output;
-		double result = finalOutput( vector );
+		if( trainingMode == true)
+		{
+			trainingIteration++;
+			trainingPatterns.add( vector );
+			desiredOutputs.add( desiredOutput );
+		}
+		double result = finalOutput( vector, desiredOutput );
         return result;
 			
 	}

@@ -12,7 +12,7 @@ import craig.SOFNN;
 public final class qq 
 {
     public static final int INPUT_VECTOR_LENGTH = 3;
-    public static final double ERROR_TOLERANCE = 50;
+    public static final double ERROR_TOLERANCE = 100;
 	public static double INITIAL_WIDTH = 100;
     public static final double MIN_FIRING_STRENGTH = 0.1354;
     public static final double WIDTH_ENLARGEMENT_CONSTANT = 1.12;
@@ -27,8 +27,6 @@ public final class qq
 		double[] inputVector = new double[INPUT_VECTOR_LENGTH];
 		double expectedValue;
 		ArrayList<String> closingPrices = new ArrayList<String>();
-
-		SOFNN net = new SOFNN();
 
 		FileInputStream djia = new FileInputStream( DATA_FILE );
 		DataInputStream djiaIn = new DataInputStream( djia );
@@ -52,7 +50,15 @@ public final class qq
 	        	break;
 		}
 
-		for( int index=0; index < 10; index++)
+		for( int i=0; i < INPUT_VECTOR_LENGTH; i++)
+			inputVector[i] = Double.valueOf( closingPrices.get( i ) );
+		
+		// Create the SOFNN. The passed vector will be the centers of the initial neuron MFs.
+		SOFNN net = new SOFNN( inputVector );
+
+		// Now train. 
+		net.trainingMode = true;
+		for( int index=1; index < 2; index++)
 		{
 			for( int i=0; i < INPUT_VECTOR_LENGTH; i++)
 				inputVector[i] = Double.valueOf( closingPrices.get( i+index ) );
